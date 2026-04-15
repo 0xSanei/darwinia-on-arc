@@ -9,8 +9,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
-import type { DarwiniaJob, DarwiniaIteration, JobStatus } from "@/lib/darwinia/types"
-import { signEIP3009, encodeXPaymentHeader } from "@/lib/darwinia/eip3009"
+import type { DarwiniaJob, JobStatus } from "@/lib/darwinia/types"
 
 const STATUS_COLORS: Record<JobStatus, string> = {
   pending: "bg-yellow-100 text-yellow-800",

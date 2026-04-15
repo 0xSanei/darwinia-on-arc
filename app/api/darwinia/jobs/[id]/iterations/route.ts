@@ -66,13 +66,15 @@ export async function POST(
         })
         .eq('id', id);
 
-      // Increment agent reputation
-      await supabase.rpc('increment_agent_stats', {
-        p_agent_id: body.agent_id,
-        p_iterations: body.generation + 1,
-      }).catch(() => {
+      // Increment agent reputation (non-fatal if RPC doesn't exist)
+      try {
+        await supabase.rpc('increment_agent_stats', {
+          p_agent_id: body.agent_id,
+          p_iterations: body.generation + 1,
+        });
+      } catch {
         // RPC may not exist yet; non-fatal
-      });
+      }
     }
 
     return NextResponse.json({ iteration }, { status: 201 });

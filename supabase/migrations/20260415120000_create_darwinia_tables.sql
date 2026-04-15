@@ -191,10 +191,36 @@ alter publication supabase_realtime add table public.darwinia_iterations;
 alter publication supabase_realtime add table public.darwinia_payments;
 
 -- =============================================================================
+-- RPC: increment_agent_stats
+-- Called by agent-worker after completing a job.
+-- =============================================================================
+create or replace function public.increment_agent_stats(
+  p_agent_id uuid,
+  p_iterations int
+)
+returns void
+language sql
+security definer
+as $$
+  update public.darwinia_agents
+  set
+    reputation          = reputation + p_iterations,
+    total_iterations    = total_iterations + p_iterations,
+    total_jobs_completed = total_jobs_completed + 1
+  where id = p_agent_id;
+$$;
+
+-- =============================================================================
 -- Seed: default demo agent
 -- =============================================================================
--- Note: wallet_id + wallet_address will be set post-migration via seed script
--- that reads wallets.json. Leave blank here so migration is pure.
+-- Uses the same Arc old-wallet EOA as agent for the demo.
+-- wallet_id mirrors Circle DCW id (4cfcb13b...) as a string foreign key.
 insert into public.darwinia_agents (name, wallet_id, wallet_address)
-values ('darwinia-default', 'PLACEHOLDER_AGENT_WALLET_ID', '0x0000000000000000000000000000000000000000')
-on conflict (wallet_id) do nothing;
+values (
+  'darwinia-default',
+  '4cfcb13b-391b-58d1-8e83-8b6204b37d28',
+  '0x39e16991c1612ad82e0df07545cf792b983db6a5'
+)
+on conflict (wallet_id) do update
+  set wallet_address = excluded.wallet_address,
+      name = excluded.name;

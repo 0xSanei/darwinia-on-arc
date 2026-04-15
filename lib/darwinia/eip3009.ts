@@ -57,7 +57,7 @@ export async function signEIP3009(
   amountUsdc: string,
   validitySeconds = 60,
 ): Promise<SignedX402Payment> {
-  const pk = privateKey.startsWith('0x') ? privateKey : ('0x' + privateKey) as `0x${string}`;
+  const pk = (privateKey.startsWith('0x') ? privateKey : ('0x' + privateKey)) as `0x${string}`;
   const account: PrivateKeyAccount = privateKeyToAccount(pk);
 
   const value = parseUnits(amountUsdc, ARC_USDC_DECIMALS);

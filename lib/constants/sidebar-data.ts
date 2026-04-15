@@ -21,12 +21,15 @@ import {
   IconListDetails,
   IconWallet,
   IconShieldCheck,
+  IconDna,
+  IconPlus,
+  IconTrophy,
 } from "@tabler/icons-react"
 
 export const sidebarData = {
   user: {
-    name: "shadcn",
-    email: "m@example.com",
+    name: "Darwinia",
+    email: "agent@darwinia.arc",
     avatar: "/avatars/shadcn.jpg",
   },
   navMain: [
@@ -35,6 +38,23 @@ export const sidebarData = {
       url: "/dashboard",
       icon: IconDashboard,
     },
+    // ── Darwinia ──────────────────────────────────────
+    {
+      title: "Optimization Jobs",
+      url: "/dashboard/darwinia",
+      icon: IconDna,
+    },
+    {
+      title: "New Job",
+      url: "/dashboard/darwinia/new",
+      icon: IconPlus,
+    },
+    {
+      title: "Agent Leaderboard",
+      url: "/dashboard/darwinia/leaderboard",
+      icon: IconTrophy,
+    },
+    // ── Infrastructure ────────────────────────────────
     {
       title: "Activity",
       url: "/dashboard/activity",

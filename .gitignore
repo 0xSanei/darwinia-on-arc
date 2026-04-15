@@ -40,3 +40,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Circle Entity Secret recovery files (NEVER commit)
+recovery_file_*.dat
+wallets.json

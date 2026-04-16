@@ -9,7 +9,7 @@
 //   5. On success: marks iteration unlocked, returns full detail
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { getUserFromRequest } from '@/lib/supabase/get-user';
 import { createServiceClient } from '@/lib/supabase/service';
 import { decodeXPaymentHeader } from '@/lib/darwinia/eip3009';
 import {
@@ -31,13 +31,8 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
-  const supabase = await createClient();
-
-  // Auth check
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  const { user, supabase } = await getUserFromRequest(req);
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   // Fetch iteration
   const { data: iteration, error } = await supabase
@@ -108,13 +103,27 @@ export async function GET(
     // Submit TransferWithAuthorization on-chain
     const publicClient = getPublicClient();
 
-    // Parse signature
+    // Parse signature components
     const sig = payment.payload.signature;
     const r = sig.slice(0, 66) as `0x${string}`;
     const s = ('0x' + sig.slice(66, 130)) as `0x${string}`;
     const v = parseInt(sig.slice(130, 132), 16);
 
-    const hash = await publicClient.simulateContract({
+    // Build relay wallet client (signs locally → eth_sendRawTransaction)
+    const relayKey = process.env.ARC_RELAY_PRIVATE_KEY;
+    if (!relayKey) throw new Error('ARC_RELAY_PRIVATE_KEY not configured');
+    const relayAccount = privateKeyToAccount(
+      (relayKey.startsWith('0x') ? relayKey : '0x' + relayKey) as `0x${string}`,
+    );
+    const walletClient = createWalletClient({
+      account: relayAccount,
+      chain: arcTestnet,
+      transport: http(),
+    });
+
+    // Skip simulateContract — call writeContract directly so viem signs with
+    // the relay private key (eth_sendRawTransaction) instead of wallet_sendTransaction.
+    const hash = await walletClient.writeContract({
       address: ARC_USDC_ADDRESS,
       abi: USDC_ABI,
       functionName: 'transferWithAuthorization',
@@ -129,23 +138,6 @@ export async function GET(
         r,
         s,
       ],
-      account: AGENT_ADDRESS,
-    }).then(async ({ request }) => {
-      // Need a wallet client to actually send. Use agent private key if available,
-      // otherwise use Circle API to sign (fallback).
-      // Use relay key (= client key for demo) to submit on-chain
-      // Anyone can submit a valid EIP-3009 signature — relay just pays gas.
-      const relayKey = process.env.ARC_RELAY_PRIVATE_KEY;
-      if (!relayKey) throw new Error('ARC_RELAY_PRIVATE_KEY not configured');
-      const relayAccount = privateKeyToAccount(
-        relayKey.startsWith('0x') ? relayKey as `0x${string}` : `0x${relayKey}`,
-      );
-      const walletClient = createWalletClient({
-        account: relayAccount,
-        chain: arcTestnet,
-        transport: http(),
-      });
-      return walletClient.writeContract(request);
     });
 
     // Wait for receipt

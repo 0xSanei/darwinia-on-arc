@@ -47,6 +47,14 @@ export default function JobDetailPage() {
     if (res.ok) {
       setJob(data.job)
       setIterations(data.iterations)
+      // Auto-fetch detail for already-unlocked iterations
+      const unlocked = (data.iterations || []).filter((it: IterationSummary) => it.is_unlocked)
+      for (const iter of unlocked) {
+        fetch(`/api/darwinia/iterations/${iter.id}/detail`)
+          .then(r => r.ok ? r.json() : null)
+          .then(d => { if (d?.iteration) setUnlockedDetail(prev => ({ ...prev, [iter.id]: d.iteration })) })
+          .catch(() => {})
+      }
     }
     setLoading(false)
   }

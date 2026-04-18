@@ -29,6 +29,7 @@ const DB_CHAIN_TO_SDK: Record<string, SupportedChain> = {
   "BASE-SEPOLIA": "baseSepolia",
   "AVAX-FUJI": "avalancheFuji",
   "ARC-TESTNET": "arcTestnet",
+  "SOL-DEVNET": "solana",
 };
 
 export async function POST(req: NextRequest) {
@@ -68,7 +69,10 @@ export async function POST(req: NextRequest) {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (user) {
+      // Skip auto-delegation for Solana: the EVM delegate pattern uses a
+      // contract call that doesn't map to the Anchor Gateway program.
+      // Solana signer management lives in gateway-solana.ts.
+      if (user && blockchain !== "SOL-DEVNET") {
         const { data: eoaWallet } = await supabase
           .from("wallets")
           .select("address")

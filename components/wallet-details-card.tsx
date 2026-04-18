@@ -75,6 +75,7 @@ export function WalletDetailsCard({ wallet }: { wallet: WalletDetails }) {
       "BASE-SEPOLIA": "bg-blue-100 text-blue-800", 
       "AVAX-FUJI": "bg-red-100 text-red-800",
       "ARC-TESTNET": "bg-yellow-100 text-yellow-800",
+      "SOL-DEVNET": "bg-fuchsia-100 text-fuchsia-800",
     }
     return colors[blockchain] || "bg-gray-100 text-gray-800"
   }

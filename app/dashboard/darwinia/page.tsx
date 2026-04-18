@@ -4,11 +4,45 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
-import { IconDna, IconPlus, IconLoader, IconChevronRight } from "@tabler/icons-react"
+import { IconDna, IconPlus, IconLoader, IconChevronRight, IconArrowsRightLeft } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { createClient } from "@/lib/supabase/client"
 import type { DarwiniaJob, JobStatus } from "@/lib/darwinia/types"
+
+/** Circle App Kit status banner — shows Arc Testnet is supported */
+function AppKitBanner() {
+  const [kitVersion, setKitVersion] = useState<string | null>(null)
+  const [arcOk, setArcOk] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    fetch("/api/darwinia/app-kit/chains")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (d) {
+          setKitVersion(d.kitVersion)
+          setArcOk(d.arcTestnetSupported)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  if (!kitVersion) return null
+
+  return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground bg-blue-50 border border-blue-100 rounded-lg px-3 py-2">
+      <IconArrowsRightLeft className="size-3 text-blue-500 shrink-0" />
+      <span>
+        <span className="font-medium text-blue-700">Circle App Kit v{kitVersion}</span>
+        {" · "}Arc Testnet{" "}
+        {arcOk
+          ? <span className="text-green-600 font-medium">✓ supported</span>
+          : <span className="text-yellow-600">checking…</span>}
+        {" · "}bridge / send / swap via Circle DCW
+      </span>
+    </div>
+  )
+}
 
 const STATUS_COLORS: Record<JobStatus, string> = {
   pending: "bg-yellow-100 text-yellow-800",
@@ -70,6 +104,9 @@ export default function DarwiniaJobsPage() {
           </Button>
         </Link>
       </div>
+
+      {/* Circle App Kit integration badge */}
+      <AppKitBanner />
 
       {/* Stats bar */}
       {!loading && (

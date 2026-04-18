@@ -17,6 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const onchain = require('./arc-onchain.cjs');
 
 // ── Config ──────────────────────────────────────────────────────────────────
 
@@ -31,13 +32,18 @@ if (fs.existsSync(envPath)) {
 
 const API_BASE = process.env.DARWINIA_API_URL || 'http://localhost:3000';
 const POLL_INTERVAL_MS = 10_000;        // 10s poll
-const BATCH_SIZE = 5;                   // evolve N generations per batch call
+const BATCH_SIZE = 1;                   // 1 gen/batch → 1 iteration record/gen → 1 on-chain unlock/gen
 const DARWINIA_DIR = path.join(__dirname, '..', '..', 'darwinia');
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Agent identity — set to our Circle wallet
-const AGENT_WALLET_ADDRESS = '0x39e16991c1612ad82e0df07545cf792b983db6a5';
+// Agent identity — prefers ARC_AGENT_ADDRESS (the EOA the worker controls via
+// ARC_AGENT_PRIVATE_KEY); falls back to the Circle DCW for legacy setups.
+const AGENT_WALLET_ADDRESS = (
+  process.env.ARC_AGENT_ADDRESS ||
+  process.env.NEXT_PUBLIC_ARC_AGENT_ADDRESS ||
+  '0x39e16991c1612ad82e0df07545cf792b983db6a5'
+).toLowerCase();
 let AGENT_ID = null;  // will be resolved from Supabase on startup
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -101,6 +107,8 @@ async function claimJob(jobId) {
   return updated;
 }
 
+const DARWINIA_TIMEOUT_MS = 5 * 60 * 1000;  // 5 min per batch; kill if exceeded
+
 function runDarwinia(generations, populationSize) {
   return new Promise((resolve, reject) => {
     const args = [
@@ -116,7 +124,13 @@ function runDarwinia(generations, populationSize) {
     proc.stdout.on('data', (d) => { stdout += d.toString(); });
     proc.stderr.on('data', (d) => { stderr += d.toString(); });
 
+    const timer = setTimeout(() => {
+      proc.kill('SIGKILL');
+      reject(new Error(`darwinia timed out after ${DARWINIA_TIMEOUT_MS / 1000}s`));
+    }, DARWINIA_TIMEOUT_MS);
+
     proc.on('close', (code) => {
+      clearTimeout(timer);
       if (code !== 0) {
         reject(new Error(`darwinia exited ${code}: ${stderr.slice(-500)}`));
         return;
@@ -167,6 +181,11 @@ async function updateJobStatus(jobId, status) {
 async function processJob(job) {
   console.log(`[agent] Processing job ${job.id}: "${job.title}"`);
   console.log(`        generations=${job.max_generations}  pop=${job.population_size}`);
+  if (job.onchain_job_id) {
+    console.log(`        onchain_job_id=${job.onchain_job_id}`);
+  }
+
+  let lastResult = null;
 
   try {
     await updateJobStatus(job.id, 'running');
@@ -176,6 +195,7 @@ async function processJob(job) {
       console.log(`[agent] Job ${job.id} — evolving gen ${gen}→${gen + batchGens - 1}...`);
 
       const result = await runDarwinia(batchGens, job.population_size);
+      lastResult = result;
 
       // The CLI resets per batch, so we report relative gen + offset
       const reportedGen = gen + (result.evolution_summary.generations_run - 1);
@@ -186,17 +206,36 @@ async function processJob(job) {
       );
     }
 
+    // ── ERC-8183 on-chain settlement ────────────────────────────────────────
+    // Only attempt if (a) job has an onchain_job_id and (b) ARC_AGENT_PRIVATE_KEY
+    // is configured. Both submit() and complete() failures are non-fatal — the
+    // job is still marked completed locally; the on-chain part is best-effort.
+    if (job.onchain_job_id && process.env.ARC_AGENT_PRIVATE_KEY && lastResult) {
+      try {
+        const deliverable = onchain.deliverableHash(lastResult);
+        console.log(`[agent] On-chain submit jobId=${job.onchain_job_id} deliverable=${deliverable}`);
+        const subTx = await onchain.submitOnChain(job.onchain_job_id, deliverable);
+        console.log(`[agent] submit tx: ${subTx}`);
+
+        const cmpTx = await onchain.completeOnChain(job.onchain_job_id, 'evolution-done');
+        console.log(`[agent] complete tx: ${cmpTx}`);
+      } catch (chainErr) {
+        console.error(`[agent] On-chain settlement failed (job still completed locally):`, chainErr.message);
+      }
+    } else if (job.onchain_job_id && !process.env.ARC_AGENT_PRIVATE_KEY) {
+      console.log('[agent] Skipping on-chain settlement: ARC_AGENT_PRIVATE_KEY not set');
+    }
+
     await updateJobStatus(job.id, 'completed');
 
-    // Increment agent stats
-    await supabaseFetch(`/darwinia_agents?id=eq.${AGENT_ID}`, {
-      method: 'PATCH',
+    // Increment agent stats via RPC (REST PATCH can't do SQL arithmetic)
+    await supabaseFetch('/rpc/increment_agent_stats', {
+      method: 'POST',
       body: JSON.stringify({
-        reputation: `reputation + ${job.max_generations}`,
-        total_jobs_completed: `total_jobs_completed + 1`,
-        total_iterations: `total_iterations + ${job.max_generations}`,
+        p_agent_id: AGENT_ID,
+        p_iterations: job.max_generations,
       }),
-    }).catch(() => {}); // non-fatal; raw SQL increment may need rpc
+    }).catch(() => {}); // non-fatal
 
     console.log(`[agent] Job ${job.id} COMPLETED`);
   } catch (err) {
@@ -238,6 +277,26 @@ async function main() {
   AGENT_ID = await resolveAgentId();
   console.log(`[agent] ID: ${AGENT_ID}`);
   console.log(`[agent] Wallet: ${AGENT_WALLET_ADDRESS}`);
+
+  // On-chain readiness check (best-effort; does not block startup).
+  try {
+    const gas = await onchain.checkAgentGas();
+    if (!gas) {
+      console.log('[agent] On-chain mode: DISABLED (set ARC_AGENT_PRIVATE_KEY to enable submit/complete)');
+    } else if (!gas.ok) {
+      console.warn(
+        `[agent] ⚠ Provider EOA ${gas.address} balance=${gas.balanceUsdc.toFixed(6)} USDC ` +
+        `< min ${gas.minUsdc} USDC. submit() will revert until you fund it on Arc.`,
+      );
+    } else {
+      console.log(
+        `[agent] ✓ Provider EOA ${gas.address} balance=${gas.balanceUsdc.toFixed(6)} USDC (gas ready)`,
+      );
+    }
+  } catch (e) {
+    console.warn('[agent] gas check failed:', e.message);
+  }
+
   console.log(`[agent] Polling every ${POLL_INTERVAL_MS / 1000}s...\n`);
 
   // Immediate first poll, then interval

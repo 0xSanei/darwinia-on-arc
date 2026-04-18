@@ -2,7 +2,7 @@
 // Used by client agent to authorize USDC payment before calling a paid endpoint.
 
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
-import { toHex, hexToBytes, keccak256, encodeAbiParameters, parseAbiParameters } from 'viem';
+import { toHex } from 'viem';
 import { ARC_USDC_ADDRESS, ARC_USDC_DECIMALS, arcTestnet } from './arc-chain';
 import { parseUnits } from 'viem';
 

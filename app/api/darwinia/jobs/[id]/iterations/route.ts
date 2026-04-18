@@ -5,11 +5,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import type { IterationPayload } from '@/lib/darwinia/types';
 
+const AGENT_API_SECRET = process.env.AGENT_API_SECRET;
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    // Verify agent secret — only trusted agent-worker can write results
+    const authHeader = req.headers.get('x-agent-secret');
+    if (!AGENT_API_SECRET || authHeader !== AGENT_API_SECRET) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await params;
     const body: IterationPayload = await req.json();
 

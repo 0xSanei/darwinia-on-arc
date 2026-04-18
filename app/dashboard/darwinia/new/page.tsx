@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic'
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { IconDna, IconLoader } from "@tabler/icons-react"
+import { IconDna, IconLoader, IconExternalLink, IconArrowDown } from "@tabler/icons-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -15,15 +15,47 @@ const CLIENT_ADDRESS = process.env.NEXT_PUBLIC_ARC_CLIENT_ADDRESS || ""
 export default function NewJobPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
+  const [bridging, setBridging] = useState(false)
+  const [bridgeResult, setBridgeResult] = useState<{
+    txHash: string
+    explorerUrl: string
+    deltaUsdc: string
+  } | null>(null)
   const [form, setForm] = useState({
     title: "BTC/USDT Strategy Evolution",
     description: "Evolve a trading strategy for BTC/USDT using genetic algorithms",
     target_symbol: "BTC/USDT",
-    max_generations: 20,
+    max_generations: 60,
     population_size: 50,
     budget_usdc: 0.1,
     price_per_iteration_usdc: 0.001,
   })
+
+  async function bridgeFromSolana() {
+    setBridging(true)
+    setBridgeResult(null)
+    const t = toast.loading("Burning USDC on Solana, attesting via Circle Gateway...")
+    try {
+      const res = await fetch("/api/darwinia/gateway-deposit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amountUsdc: 0.5 }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || "Bridge failed")
+      const deltaUsdc = (Number(data.delta) / 1e6).toFixed(6)
+      setBridgeResult({
+        txHash: data.mintTxHash,
+        explorerUrl: data.explorerUrl,
+        deltaUsdc,
+      })
+      toast.success(`+${deltaUsdc} USDC arrived on Arc`, { id: t })
+    } catch (err: any) {
+      toast.error(err.message, { id: t })
+    } finally {
+      setBridging(false)
+    }
+  }
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.type === "number" ? Number(e.target.value) : e.target.value }))
@@ -37,7 +69,7 @@ export default function NewJobPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...form,
-          client_wallet_address: "0xa785c26A95a6CDfbE85edD71388a23854d441c36",
+          client_wallet_address: CLIENT_ADDRESS,
         }),
       })
       const data = await res.json()
@@ -63,6 +95,51 @@ export default function NewJobPage() {
         </div>
       </div>
 
+      {/* Cross-chain capital: Solana → Arc Gateway deposit */}
+      <div className="rounded-lg border bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 border-purple-200 p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1">
+            <p className="text-sm font-medium flex items-center gap-2">
+              <span className="font-mono text-xs bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded">
+                Circle Gateway
+              </span>
+              Need USDC on Arc?
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Bridge 0.5 USDC from Solana → Arc in one click via the Circle Gateway protocol.
+              Demo uses a server-side Solana wallet.
+            </p>
+            {bridgeResult && (
+              <p className="text-xs mt-2 flex items-center gap-2">
+                <span className="text-green-700 font-medium">+{bridgeResult.deltaUsdc} USDC</span>
+                <a
+                  href={bridgeResult.explorerUrl}
+                  target="_blank" rel="noopener noreferrer"
+                  className="font-mono text-blue-600 hover:underline inline-flex items-center gap-1"
+                >
+                  {bridgeResult.txHash.slice(0, 10)}…
+                  <IconExternalLink className="size-3" />
+                </a>
+              </p>
+            )}
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={bridging}
+            onClick={bridgeFromSolana}
+            className="gap-2 shrink-0"
+          >
+            {bridging ? (
+              <><IconLoader className="size-4 animate-spin" /> Bridging…</>
+            ) : (
+              <><IconArrowDown className="size-4" /> Bridge 0.5 USDC</>
+            )}
+          </Button>
+        </div>
+      </div>
+
       <form onSubmit={handleSubmit} className="flex flex-col gap-5">
         <div className="flex flex-col gap-2">
           <Label htmlFor="title">Job Title</Label>
@@ -85,7 +162,7 @@ export default function NewJobPage() {
               id="max_generations"
               type="number"
               min={1}
-              max={100}
+              max={500}
               value={form.max_generations}
               onChange={set("max_generations")}
             />

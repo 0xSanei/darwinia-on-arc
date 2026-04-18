@@ -57,6 +57,7 @@ export async function POST(req: NextRequest) {
       "baseSepolia",
       "avalancheFuji",
       "arcTestnet",
+      "solana",
     ];
 
     // Fetch balances for all unique addresses sequentially to avoid rate limits

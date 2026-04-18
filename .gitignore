@@ -33,9 +33,18 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*.local
 .env
+.env*.tmp
 
 # vercel
 .vercel
+
+# demo recording artifacts (large binaries, transient)
+/slides/demo-output/
+/slides/demo-frames/
+/slides/demo-recording.mp4
+
+# foundry build output
+/contracts/artifacts/
 
 # typescript
 *.tsbuildinfo

@@ -62,6 +62,7 @@ const walletCreationFormSchema = z.object({
     "AVAX-FUJI",
     "BASE-SEPOLIA",
     "ETH-SEPOLIA",
+    "SOL-DEVNET",
   ]),
   type: z.enum([
     "treasury",
@@ -237,6 +238,7 @@ export function NewWalletDialog({
                           <SelectItem value="AVAX-FUJI">Avalanche Fuji</SelectItem>
                           <SelectItem value="BASE-SEPOLIA">Base Sepolia</SelectItem>
                           <SelectItem value="ETH-SEPOLIA">Ethereum Sepolia</SelectItem>
+                          <SelectItem value="SOL-DEVNET">Solana Devnet</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />

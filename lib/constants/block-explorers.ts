@@ -21,4 +21,5 @@ export const BLOCK_EXPLORERS: Record<string, string> = {
   "BASE-SEPOLIA": "https://sepolia.basescan.org",
   "AVAX-FUJI": "https://testnet.snowtrace.io",
   "ARC-TESTNET": "https://testnet.arcscan.app",
+  "SOL-DEVNET": "https://explorer.solana.com?cluster=devnet",
 }

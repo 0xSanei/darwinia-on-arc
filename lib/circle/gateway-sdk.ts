@@ -54,6 +54,8 @@ export const arcTestnet = {
   testnet: true,
 } as const satisfies Chain;
 
+// EVM USDC addresses. Solana USDC mint lives in gateway-solana.ts
+// (kept separate because Solana SPL mints aren't viem-compatible addresses).
 export const USDC_ADDRESSES = {
   ethSepolia: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
   arcTestnet: "0x3600000000000000000000000000000000000000",
@@ -69,11 +71,17 @@ export const TOKEN_IDS = {
 export const DOMAIN_IDS = {
   ethSepolia: 0,
   avalancheFuji: 1,
+  solana: 5,
   baseSepolia: 6,
   arcTestnet: 26,
 } as const;
 
-export type SupportedChain = keyof typeof USDC_ADDRESSES;
+export type EvmSupportedChain = keyof typeof USDC_ADDRESSES;
+export type SupportedChain = EvmSupportedChain | "solana";
+
+export function isEvmChain(chain: SupportedChain): chain is EvmSupportedChain {
+  return chain !== "solana";
+}
 
 // Mapping for Circle API "blockchain" parameter
 export const CIRCLE_CHAIN_NAMES: Record<SupportedChain, string> = {
@@ -81,16 +89,18 @@ export const CIRCLE_CHAIN_NAMES: Record<SupportedChain, string> = {
   avalancheFuji: "AVAX-FUJI",
   baseSepolia: "BASE-SEPOLIA",
   arcTestnet: "ARC-TESTNET",
+  solana: "SOL-DEVNET",
 };
 
 export const CHAIN_BY_DOMAIN: Record<number, SupportedChain> = {
   [DOMAIN_IDS.ethSepolia]: "ethSepolia",
   [DOMAIN_IDS.avalancheFuji]: "avalancheFuji",
+  [DOMAIN_IDS.solana]: "solana",
   [DOMAIN_IDS.baseSepolia]: "baseSepolia",
   [DOMAIN_IDS.arcTestnet]: "arcTestnet",
 } as const;
 
-function getChainConfig(chain: SupportedChain): Chain {
+function getChainConfig(chain: EvmSupportedChain): Chain {
   switch (chain) {
     case "arcTestnet":
       return arcTestnet;
@@ -247,7 +257,7 @@ async function initiateContractInteraction(
 export async function addGatewayDelegate(
   depositorWalletId: string,
   delegateAddress: Address,
-  chain: SupportedChain
+  chain: EvmSupportedChain
 ): Promise<Transaction> {
   const usdcAddress = USDC_ADDRESSES[chain];
 
@@ -273,6 +283,16 @@ export async function initiateDepositFromCustodialWallet(
   amountInAtomicUnits: bigint,
   delegateAddress?: Address
 ): Promise<Transaction> {
+  if (chain === "solana") {
+    // Solana deposits require an Anchor program call on the Gateway Wallet
+    // program; Circle's Developer-Controlled Wallets SDK signTransaction
+    // flow needs the raw tx constructed by us. For now, direct users to the
+    // standalone CLI: `npx tsx scripts/deposit-solana-gateway.ts <amount>`.
+    throw new Error(
+      "Solana Gateway deposits are not yet wired through the web API. Use `scripts/deposit-solana-gateway.ts` to deposit, then burn intents from Solana will work via the usual transfer flow."
+    );
+  }
+
   const usdcAddress = USDC_ADDRESSES[chain];
   let lastTx: Transaction | undefined = undefined;
 
@@ -400,11 +420,11 @@ async function getCircleWalletAddress(walletId: string): Promise<Address> {
  */
 async function getSignerWalletIdForUser(
   userId: string,
-  chain: SupportedChain
+  chain: EvmSupportedChain
 ): Promise<{ walletId: string; address: string }> {
   const { getGatewayEOAWalletId } = await import("@/lib/circle/create-gateway-eoa-wallets");
-  
-  const chainMap: Record<SupportedChain, string> = {
+
+  const chainMap: Record<EvmSupportedChain, string> = {
     ethSepolia: 'ETH-SEPOLIA',
     baseSepolia: 'BASE-SEPOLIA',
     avalancheFuji: 'AVAX-FUJI',
@@ -417,7 +437,7 @@ async function getSignerWalletIdForUser(
 
 async function signBurnIntentWithEOA(
   burnIntentData: BurnIntentData,
-  sourceChain: SupportedChain,
+  sourceChain: EvmSupportedChain,
   userId: string
 ): Promise<`0x${string}`> {
   const typedData = burnIntentTypedData(burnIntentData);
@@ -466,10 +486,15 @@ async function signBurnIntentWithEOA(
  */
 export async function executeGatewayMint(
   walletAddress: Address,
-  destinationChain: SupportedChain,
+  destinationChain: EvmSupportedChain,
   attestation: string,
   signature: string
 ): Promise<Transaction> {
+  if ((destinationChain as string) === "solana") {
+    throw new Error(
+      "Solana-destination Gateway mint is not yet implemented. Destination must be an EVM chain."
+    );
+  }
   const blockchain = CIRCLE_CHAIN_NAMES[destinationChain];
   if (!blockchain) throw new Error(`No Circle blockchain mapping for ${destinationChain}`);
 
@@ -512,6 +537,36 @@ export async function signAndSubmitGatewayBurnIntent(
   attestation: `0x${string}`;
   attestationSignature: `0x${string}`;
 }> {
+  // Solana source branch — uses local ed25519 keypair (Circle SDK cannot sign
+  // the 0xff-prefixed binary burn intent format).
+  if (sourceChain === "solana") {
+    if (destinationChain === "solana") {
+      throw new Error(
+        "Solana → Solana Gateway transfers are not yet implemented. Use EVM destination."
+      );
+    }
+    const destDomain = DOMAIN_IDS[destinationChain];
+    if (destDomain === undefined) {
+      throw new Error(`Invalid destination chain: ${destinationChain}`);
+    }
+    const { signAndSubmitSolanaSourceBurnIntent } = await import(
+      "@/lib/circle/gateway-solana"
+    );
+    return signAndSubmitSolanaSourceBurnIntent({
+      amount,
+      destinationDomain: destDomain,
+      destinationContractEvm: GATEWAY_MINTER_ADDRESS as `0x${string}`,
+      destinationTokenEvm: USDC_ADDRESSES[destinationChain] as `0x${string}`,
+      destinationRecipientEvm: recipientAddress as `0x${string}`,
+    });
+  }
+
+  if (destinationChain === "solana") {
+    throw new Error(
+      "EVM → Solana Gateway minting is not yet implemented. Destination must be an EVM chain."
+    );
+  }
+
   // 1. Get EOA signer for source chain (used for signing only)
   const { address } = await getSignerWalletIdForUser(userId, sourceChain);
   const eoaSignerAddress = address as Address;
@@ -618,6 +673,11 @@ export async function transferUnifiedBalanceCircle(
   attestation: `0x${string}`;
   mintTxHash: Hash;
 }> {
+  if (sourceChain === "solana" || destinationChain === "solana") {
+    throw new Error(
+      "transferUnifiedBalanceCircle does not support Solana. Use signAndSubmitGatewayBurnIntent for Solana source."
+    );
+  }
 
   // 1. Get Wallet Address
   const walletAddress = await getCircleWalletAddress(walletId);
@@ -711,16 +771,22 @@ export async function transferUnifiedBalanceCircle(
   };
 }
 
-export async function fetchGatewayBalance(address: Address): Promise<{
+export async function fetchGatewayBalance(
+  address: Address,
+  solanaDepositor?: string
+): Promise<{
   token: string;
   balances: Array<{ domain: number; depositor: string; balance: string }>;
 }> {
-  const sources = [
+  const sources: Array<{ domain: number; depositor: string }> = [
     { domain: DOMAIN_IDS.arcTestnet, depositor: address },
     { domain: DOMAIN_IDS.avalancheFuji, depositor: address },
     { domain: DOMAIN_IDS.baseSepolia, depositor: address },
     { domain: DOMAIN_IDS.ethSepolia, depositor: address },
   ];
+  if (solanaDepositor) {
+    sources.push({ domain: DOMAIN_IDS.solana, depositor: solanaDepositor });
+  }
 
   const requestBody = {
     token: "USDC",
@@ -795,13 +861,28 @@ async function withRetry<T>(
 }
 
 export async function getUsdcBalance(
-  address: Address,
+  address: Address | string,
   chain: SupportedChain
 ): Promise<bigint> {
+  // Solana branch: read SPL token balance via @solana/web3.js.
+  // The `address` for Solana is a base58 pubkey, not an EVM address.
+  if (chain === "solana") {
+    const cacheKey = `${address}-solana`;
+    const cached = balanceCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+      return cached.balance;
+    }
+    const { getSolanaUsdcBalance } = await import("@/lib/circle/gateway-solana");
+    const balance = await getSolanaUsdcBalance(address as string);
+    balanceCache.set(cacheKey, { balance, timestamp: Date.now() });
+    return balance;
+  }
+
   // Check cache first
-  const cacheKey = `${address.toLowerCase()}-${chain}`;
+  const evmAddress = (address as string).toLowerCase();
+  const cacheKey = `${evmAddress}-${chain}`;
   const cached = balanceCache.get(cacheKey);
-  
+
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     return cached.balance;
   }
@@ -817,7 +898,7 @@ export async function getUsdcBalance(
       address: USDC_ADDRESSES[chain] as Address,
       abi: erc20Abi,
       functionName: "balanceOf",
-      args: [address],
+      args: [address as Address],
     });
 
     return result as bigint;

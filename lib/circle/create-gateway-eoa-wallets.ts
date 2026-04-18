@@ -38,6 +38,9 @@ export interface GatewayEOAWallet {
  * Circle SDK automatically derives the same address across EVM chains
  */
 export async function generateGatewayEOAWallets(walletSetId: string): Promise<GatewayEOAWallet[]> {
+  // Solana is intentionally excluded here: its burn-intent signer is a local
+  // Ed25519 keypair (SOLANA_GATEWAY_PRIVATE_KEY), not a Circle custodial
+  // wallet. See lib/circle/gateway-solana.ts.
   const chains = [
     { id: "ETH-SEPOLIA", name: "Ethereum Sepolia Gateway Signer" },
     { id: "BASE-SEPOLIA", name: "Base Sepolia Gateway Signer" },

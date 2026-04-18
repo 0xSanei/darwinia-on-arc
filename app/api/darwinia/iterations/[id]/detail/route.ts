@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserFromRequest } from '@/lib/supabase/get-user';
 import { createServiceClient } from '@/lib/supabase/service';
-import { decodeXPaymentHeader } from '@/lib/darwinia/eip3009';
+import { decodeXPaymentHeader, EIP3009_DOMAIN, TRANSFER_WITH_AUTHORIZATION_TYPES } from '@/lib/darwinia/eip3009';
 import {
   getPublicClient,
   ARC_USDC_ADDRESS,
@@ -20,7 +20,7 @@ import {
   parseUSDC,
   arcTestnet,
 } from '@/lib/darwinia/arc-chain';
-import { createWalletClient, http } from 'viem';
+import { createWalletClient, http, verifyTypedData } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 
 const AGENT_ADDRESS = process.env.ARC_AGENT_ADDRESS as `0x${string}`;
@@ -94,10 +94,41 @@ export async function GET(
       return NextResponse.json({ error: 'Invalid payment parameters' }, { status: 400 });
     }
 
-    // Check validBefore hasn't expired
+    // Check validBefore hasn't expired (with 5s clock skew tolerance)
     const now = BigInt(Math.floor(Date.now() / 1000));
-    if (payment.payload.validBefore < now) {
+    if (payment.payload.validBefore < now - 5n) {
       return NextResponse.json({ error: 'Payment authorization expired' }, { status: 400 });
+    }
+
+    // Off-chain signature verification (fast-fail before submitting to chain)
+    const isValid = await verifyTypedData({
+      address: payment.payload.from,
+      domain: EIP3009_DOMAIN,
+      types: TRANSFER_WITH_AUTHORIZATION_TYPES,
+      primaryType: 'TransferWithAuthorization',
+      message: {
+        from: payment.payload.from,
+        to: payment.payload.to,
+        value: payment.payload.value,
+        validAfter: payment.payload.validAfter,
+        validBefore: payment.payload.validBefore,
+        nonce: payment.payload.nonce,
+      },
+      signature: payment.payload.signature,
+    });
+    if (!isValid) {
+      return NextResponse.json({ error: 'Invalid EIP-3009 signature' }, { status: 400 });
+    }
+
+    // DB-level nonce replay protection (on-chain contract also checks, but fail fast)
+    const serviceSupabase = createServiceClient();
+    const { data: existingNonce } = await serviceSupabase
+      .from('darwinia_payments')
+      .select('id')
+      .eq('eip3009_nonce', payment.payload.nonce)
+      .single();
+    if (existingNonce) {
+      return NextResponse.json({ error: 'Nonce already used' }, { status: 400 });
     }
 
     // Submit TransferWithAuthorization on-chain
@@ -147,8 +178,6 @@ export async function GET(
     }
 
     // Mark iteration unlocked + record payment
-    const serviceSupabase = createServiceClient();
-
     await serviceSupabase.from('darwinia_iterations').update({ is_unlocked: true }).eq('id', id);
 
     await serviceSupabase.from('darwinia_payments').insert({

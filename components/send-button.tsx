@@ -52,6 +52,7 @@ const SUPPORTED_CHAINS = [
   { value: "ethSepolia", label: "Ethereum Sepolia" },
   { value: "baseSepolia", label: "Base Sepolia" },
   { value: "avalancheFuji", label: "Avalanche Fuji" },
+  { value: "solana", label: "Solana Devnet" },
 ];
 
 const BLOCKCHAIN_MAP: Record<string, string> = {
@@ -59,6 +60,7 @@ const BLOCKCHAIN_MAP: Record<string, string> = {
   ethSepolia: "ETH-SEPOLIA",
   baseSepolia: "BASE-SEPOLIA",
   avalancheFuji: "AVAX-FUJI",
+  solana: "SOL-DEVNET",
 };
 
 interface SettlementInfo {

@@ -29,6 +29,7 @@ const DB_CHAIN_TO_SDK: Record<string, SupportedChain> = {
   "BASE-SEPOLIA": "baseSepolia",
   "AVAX-FUJI": "avalancheFuji",
   "ARC-TESTNET": "arcTestnet",
+  "SOL-DEVNET": "solana",
 };
 
 export async function POST(req: NextRequest) {

@@ -135,7 +135,8 @@ export async function POST(request: NextRequest) {
         "ETH-SEPOLIA": "ethSepolia",
         "AVAX-FUJI": "avalancheFuji",
         "BASE-SEPOLIA": "baseSepolia",
-        "ARC-TESTNET": "arcTestnet"
+        "ARC-TESTNET": "arcTestnet",
+        "SOL-DEVNET": "solana",
       };
 
       const gatewaySourceChain = gatewayChainMapping[sourceChain];
@@ -147,8 +148,9 @@ export async function POST(request: NextRequest) {
             const domainMapping: Record<number, string> = {
               0: "ethSepolia",
               1: "avalancheFuji",
+              5: "solana",
               6: "baseSepolia",
-              26: "arcTestnet"
+              26: "arcTestnet",
             };
             return domainMapping[b.domain] === gatewaySourceChain;
           });

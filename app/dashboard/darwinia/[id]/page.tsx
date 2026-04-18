@@ -22,6 +22,17 @@ const STATUS_COLORS: Record<JobStatus, string> = {
   cancelled: "bg-gray-100 text-gray-600",
 }
 
+const ARC_EXPLORER = "https://explorer.testnet.arc.network"
+const AGENTIC_COMMERCE_ADDR =
+  process.env.NEXT_PUBLIC_ARC_AGENTIC_COMMERCE || "0xe1bb5422bc3b4b03e6b4442a5195721fabdbf5f5"
+const IDENTITY_REGISTRY_ADDR =
+  process.env.NEXT_PUBLIC_ARC_IDENTITY_REGISTRY || "0x96631e6cdc6bb37f10c3a132149ddde7e8061d05"
+
+function shortAddr(addr: string) {
+  if (!addr) return ""
+  return `${addr.slice(0, 6)}…${addr.slice(-4)}`
+}
+
 interface IterationSummary {
   id: string
   generation: number
@@ -163,6 +174,57 @@ export default function JobDetailPage() {
             <p className="text-sm text-muted-foreground mt-0.5">
               {job.target_symbol} · {job.max_generations} generations · ${Number(job.price_per_iteration_usdc).toFixed(4)} USDC / iteration
             </p>
+          </div>
+        </div>
+      </div>
+
+      {/* On-chain identity (ERC-8004 + ERC-8183) */}
+      <div className="rounded-lg border bg-card p-4">
+        <p className="text-sm font-medium mb-3 flex items-center gap-2">
+          <span className="inline-flex items-center gap-1 rounded bg-purple-100 text-purple-800 text-xs font-mono px-1.5 py-0.5">
+            ERC-8183
+          </span>
+          <span className="inline-flex items-center gap-1 rounded bg-indigo-100 text-indigo-800 text-xs font-mono px-1.5 py-0.5">
+            ERC-8004
+          </span>
+          <span className="text-muted-foreground text-xs">
+            On-chain identity & job lifecycle on Arc Testnet
+          </span>
+        </p>
+        <div className="grid grid-cols-3 gap-4 text-xs">
+          <div>
+            <p className="text-muted-foreground mb-1">AgenticCommerce (ERC-8183)</p>
+            <a
+              href={`${ARC_EXPLORER}/address/${AGENTIC_COMMERCE_ADDR}`}
+              target="_blank" rel="noopener noreferrer"
+              className="font-mono text-blue-600 hover:underline inline-flex items-center gap-1"
+            >
+              {shortAddr(AGENTIC_COMMERCE_ADDR)} <IconExternalLink className="size-3" />
+            </a>
+          </div>
+          <div>
+            <p className="text-muted-foreground mb-1">IdentityRegistry (ERC-8004)</p>
+            <a
+              href={`${ARC_EXPLORER}/address/${IDENTITY_REGISTRY_ADDR}`}
+              target="_blank" rel="noopener noreferrer"
+              className="font-mono text-blue-600 hover:underline inline-flex items-center gap-1"
+            >
+              {shortAddr(IDENTITY_REGISTRY_ADDR)} <IconExternalLink className="size-3" />
+            </a>
+          </div>
+          <div>
+            <p className="text-muted-foreground mb-1">On-chain Job ID</p>
+            {job.onchain_job_id ? (
+              <a
+                href={`${ARC_EXPLORER}/address/${AGENTIC_COMMERCE_ADDR}`}
+                target="_blank" rel="noopener noreferrer"
+                className="font-mono text-blue-600 hover:underline inline-flex items-center gap-1"
+              >
+                #{job.onchain_job_id} <IconExternalLink className="size-3" />
+              </a>
+            ) : (
+              <span className="font-mono text-yellow-700">pending</span>
+            )}
           </div>
         </div>
       </div>

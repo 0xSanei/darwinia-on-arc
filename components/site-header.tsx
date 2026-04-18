@@ -46,7 +46,7 @@ type Transaction = {
   created_at: string
   status: "PENDING" | "CONFIRMED" | "COMPLETE" | "FAILED"
   type: "INBOUND" | "OUTBOUND"
-  blockchain: "ETH-SEPOLIA" | "BASE-SEPOLIA" | "AVAX-FUJI" | "ARC-TESTNET"
+  blockchain: "ETH-SEPOLIA" | "BASE-SEPOLIA" | "AVAX-FUJI" | "ARC-TESTNET" | "SOL-DEVNET"
 }
 
 export function SiteHeader() {

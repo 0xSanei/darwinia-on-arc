@@ -117,6 +117,7 @@ export async function POST(req: NextRequest) {
       "BASE-SEPOLIA": "baseSepolia",
       "AVAX-FUJI": "avalancheFuji",
       "ARC-TESTNET": "arcTestnet",
+      "SOL-DEVNET": "solana",
     };
 
     await Promise.all(

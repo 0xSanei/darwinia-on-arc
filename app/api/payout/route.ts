@@ -19,12 +19,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { circleDeveloperSdk } from "@/lib/circle/developer-controlled-wallets-client";
-import { 
+import {
   signAndSubmitGatewayBurnIntent,
   executeGatewayMint,
   transferUnifiedBalanceCircle,
   CIRCLE_CHAIN_NAMES,
   type SupportedChain,
+  isEvmChain,
   getUsdcBalance,
   fetchGatewayBalance,
   GATEWAY_MINTER_ADDRESS,
@@ -43,6 +44,7 @@ const BLOCKCHAIN_TO_CHAIN: Record<string, SupportedChain> = {
   "BASE-SEPOLIA": "baseSepolia",
   "AVAX-FUJI": "avalancheFuji",
   "ARC-TESTNET": "arcTestnet",
+  "SOL-DEVNET": "solana",
 };
 
 const CHAIN_TO_BLOCKCHAIN: Record<SupportedChain, string> = {
@@ -50,6 +52,7 @@ const CHAIN_TO_BLOCKCHAIN: Record<SupportedChain, string> = {
   "baseSepolia": "BASE-SEPOLIA",
   "avalancheFuji": "AVAX-FUJI",
   "arcTestnet": "ARC-TESTNET",
+  "solana": "SOL-DEVNET",
 };
 
 const CHAIN_LABELS: Record<SupportedChain, string> = {
@@ -57,6 +60,7 @@ const CHAIN_LABELS: Record<SupportedChain, string> = {
   "baseSepolia": "Base Sepolia",
   "avalancheFuji": "Avalanche Fuji",
   "arcTestnet": "Arc Testnet",
+  "solana": "Solana Devnet",
 };
 
 // Gateway fee estimates per chain (in USDC)
@@ -66,6 +70,7 @@ const GATEWAY_FEES: Record<SupportedChain, number> = {
   "baseSepolia": 0.01,    // Base: ~$0.01
   "avalancheFuji": 0.50,  // Avalanche: ~$0.50
   "arcTestnet": 0.01,     // Arc: ~$0.01 (estimate, similar to Base)
+  "solana": 0.01,         // Solana: ~$0.01
 };
 
 function convertToSmallestUnit(amount: string): string {
@@ -270,6 +275,19 @@ export async function POST(req: NextRequest) {
 
     const amountInAtomicUnits = BigInt(convertToSmallestUnit(amount));
     const destinationChain: SupportedChain = requestedChain || "arcTestnet";
+
+    // Solana-as-destination is not yet supported server-side — minting on Solana
+    // requires an Anchor instruction call that lib/circle/gateway-solana.ts
+    // does not yet implement. Fail fast with a clear message.
+    if (!isEvmChain(destinationChain)) {
+      return NextResponse.json(
+        {
+          error: "Unsupported destination chain",
+          userMessage: "Solana is supported as a source chain only. Please pick an EVM destination.",
+        },
+        { status: 400 }
+      );
+    }
 
     // Fetch user's wallets
     const { data: wallets, error: walletsError } = await supabase

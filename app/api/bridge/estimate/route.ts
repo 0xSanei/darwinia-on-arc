@@ -170,7 +170,10 @@ export async function POST(request: NextRequest) {
     const kit = new BridgeKit();
 
     // Create Circle Wallets adapter
-    const adapter = createCircleWalletsAdapter({
+    // Cast to any: HybridAdapter<CircleWalletsAdapterCapabilities> lacks
+    // getTokenDecimals on its type but kit.estimate doesn't actually call it
+    // for these chains. Same pattern as the existing `chain as any` casts below.
+    const adapter: any = createCircleWalletsAdapter({
       apiKey: process.env.CIRCLE_API_KEY,
       entitySecret: process.env.CIRCLE_ENTITY_SECRET,
     });

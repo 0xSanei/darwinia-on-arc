@@ -288,37 +288,39 @@ const cardShadow = () => ({ type: "outer", blur: 8, offset: 3, angle: 135, color
   });
 
   const features = [
-    { title: "Native USDC", desc: "$0.001 micropayments economically viable.\nNo bridge overhead, no wrapped tokens.", color: PURPLE, x: 0.8, y: 1.5 },
-    { title: "x402 Protocol", desc: "HTTP 402 payment-gated API responses.\nPay-per-call, not pay-per-month.", color: BLUE, x: 5.15, y: 1.5 },
-    { title: "EIP-3009 Meta-TX", desc: "Gas-free client experience.\nRelay wallet submits on-chain.", color: CYAN, x: 0.8, y: 3.35 },
-    { title: "Agent Reputation", desc: "On-chain leaderboard incentivizes\nworker network growth.", color: GREEN, x: 5.15, y: 3.35 },
+    { title: "Native USDC + EIP-3009", desc: "$0.001 micropayments via gas-free\nTransferWithAuthorization meta-tx.", color: PURPLE, x: 0.8, y: 1.4 },
+    { title: "x402 Pay-Per-Result", desc: "HTTP 402 gates each iteration.\nNo subscriptions; unlock on demand.", color: BLUE, x: 5.15, y: 1.4 },
+    { title: "ERC-8183 AgenticCommerce", desc: "On-chain Job lifecycle:\ncreateJob → submit → complete.", color: CYAN, x: 0.8, y: 2.65 },
+    { title: "ERC-8004 IdentityRegistry", desc: "Reputation grows verifiably:\ncomplete() → incrementReputation().", color: GREEN, x: 5.15, y: 2.65 },
+    { title: "Circle Gateway", desc: "One-click Solana → Arc USDC bridge.\n2.5 USDC end-to-end in ~3s, 0.003 fee.", color: PURPLE, x: 0.8, y: 3.9 },
+    { title: "Sub-Second Finality", desc: "60+ on-chain settlements in one demo.\nWould cost $180+ on Ethereum.", color: BLUE, x: 5.15, y: 3.9 },
   ];
 
   features.forEach((f) => {
     // Card
     slide.addShape(pres.shapes.RECTANGLE, {
-      x: f.x, y: f.y, w: 4.05, h: 1.55,
+      x: f.x, y: f.y, w: 4.05, h: 1.05,
       fill: { color: BG_CARD },
       shadow: cardShadow(),
     });
 
     // Left accent
     slide.addShape(pres.shapes.RECTANGLE, {
-      x: f.x, y: f.y, w: 0.07, h: 1.55,
+      x: f.x, y: f.y, w: 0.07, h: 1.05,
       fill: { color: f.color },
     });
 
     // Title
     slide.addText(f.title, {
-      x: f.x + 0.3, y: f.y + 0.15, w: 3.5, h: 0.45,
-      fontSize: 20, fontFace: "Calibri", color: WHITE,
+      x: f.x + 0.3, y: f.y + 0.1, w: 3.5, h: 0.35,
+      fontSize: 15, fontFace: "Calibri", color: WHITE,
       bold: true, align: "left", margin: 0,
     });
 
     // Description
     slide.addText(f.desc, {
-      x: f.x + 0.3, y: f.y + 0.65, w: 3.5, h: 0.75,
-      fontSize: 13, fontFace: "Calibri", color: MUTED,
+      x: f.x + 0.3, y: f.y + 0.48, w: 3.5, h: 0.55,
+      fontSize: 11, fontFace: "Calibri", color: MUTED,
       align: "left", margin: 0,
     });
   });

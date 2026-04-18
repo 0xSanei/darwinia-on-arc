@@ -6,6 +6,17 @@ AI-driven genetic algorithm optimization as a service, settled with **$0.001 USD
 
 **Live demo:** https://darwinia-on-arc.vercel.app
 
+### For reviewers — verify on-chain in 30 seconds
+
+| What | Where | Why it matters |
+|---|---|---|
+| **ERC-8183 Job lifecycle** ([0xe1bb…f5f5](https://explorer.testnet.arc.network/address/0xe1bb5422bc3b4b03e6b4442a5195721fabdbf5f5)) | Open any job detail page; see the `On-chain Job ID` chip linking to the contract | Real `createJob` → `submit` → `complete` calls, not stubs |
+| **ERC-8004 IdentityRegistry** ([0x9663…1d05](https://explorer.testnet.arc.network/address/0x96631e6cdc6bb37f10c3a132149ddde7e8061d05)) | `/dashboard/darwinia/leaderboard` | Reputation increments come from `complete()` calling `incrementReputation` |
+| **60+ Nanopayment txs** | [`slides/tx-evidence-b6f2dc41-…json`](slides/tx-evidence-b6f2dc41-c9c8-4cb1-9930-59b8858bd6e6.json) | Every iteration unlock = one $0.001 EIP-3009 settlement on Arc Testnet |
+| **End-to-end on-chain Job lifecycle** | Job #4 — [`createJob`](https://explorer.testnet.arc.network/tx/0x40c79f88cf3f77522b75704cabde22120e01941e6b3e54de939fc27ef374d58a) → [`submit`](https://explorer.testnet.arc.network/tx/0xc43db7700ccdfcb4950117eee3e283071ed8ab57e6b29fd041b970261732cbed) → [`complete`](https://explorer.testnet.arc.network/tx/0xd0608d1b1702d75b859a83c3a748986bbe671fc5da0dce4c828a068c09ed93ac) | Agent reputation went 0 → 1 atomically inside `complete()` (verifiable via `IdentityRegistry.reputation(4)`) |
+| **Solana → Arc bridge** | "Bridge 0.5 USDC" button on `/dashboard/darwinia/new`; smoke test in [`scripts/smoke-test-solana-to-arc.mjs`](scripts/smoke-test-solana-to-arc.mjs) | Real cross-chain capital, not mocked |
+| **Reproducible agent provisioning** | [`scripts/bootstrap-agent-eoa.mjs`](scripts/bootstrap-agent-eoa.mjs) | One command spins up a fresh EOA, funds it, registers it on-chain, syncs DB |
+
 ---
 
 ## What it does
@@ -23,29 +34,33 @@ On Ethereum mainnet, a single `transferWithAuthorization` costs **$3–15 in gas
 
 ## Architecture
 
-```
-User Browser
-  └─► Next.js Dashboard (Vercel)
-        ├─► POST /api/darwinia/jobs        → create job (Supabase)
-        ├─► GET  /api/darwinia/jobs/:id    → job detail + iterations
-        └─► GET  /api/darwinia/iterations/:id/detail
-              ├─ if locked: 402 + paymentRequirement
-              └─ if X-PAYMENT header present:
-                   1. off-chain EIP-712 sig verify
-                   2. DB nonce replay check
-                   3. relay wallet → transferWithAuthorization → Arc Testnet
-                   4. mark unlocked, return full genome
+```mermaid
+flowchart LR
+    U([User Browser])
+    NX[Next.js Dashboard<br/>Vercel]
+    SB[(Supabase<br/>Postgres + RLS)]
+    AW[Agent Worker<br/>Node.js + PM2]
+    PY[Python Darwinia<br/>GA Engine]
+    AC[AgenticCommerce<br/>ERC-8183]
+    IR[IdentityRegistry<br/>ERC-8004]
+    USDC[USDC<br/>EIP-3009]
+    SOL[Solana Gateway<br/>burnIntent]
 
-Agent Worker (Node.js, PM2)
-  └─► polls Supabase for pending jobs
-  └─► claims job (Supabase PATCH, atomic)
-  └─► spawns `python -m darwinia evolve -g N --json`
-  └─► POSTs each generation result to Supabase
-  └─► on completion:
-        ├─ AgenticCommerce.submit(jobId, deliverableHash)   (provider EOA)
-        ├─ AgenticCommerce.complete(jobId, reason)          (evaluator EOA)
-        │   └─ triggers IdentityRegistry.incrementReputation(agent, 1)
-        └─ increment_agent_stats RPC (off-chain mirror)
+    U -->|create job + sign payments| NX
+    NX -->|insert / read| SB
+    NX -.->|x402: HTTP 402<br/>+ EIP-3009 relay| USDC
+    NX -->|createJob| AC
+    SOL -->|gatewayMint| USDC
+
+    AW -->|poll / claim / report| SB
+    AW -->|spawn| PY
+    AW -->|submit + complete| AC
+    AC -->|incrementReputation| IR
+
+    classDef chain fill:#fef3c7,stroke:#d97706,stroke-width:2px
+    classDef onchain fill:#dbeafe,stroke:#2563eb,stroke-width:2px
+    class AC,IR,USDC,SOL onchain
+    class NX,AW chain
 ```
 
 ---
@@ -79,21 +94,37 @@ This is the first deployment we know of that wires **ERC-8004 Agent Identity Reg
 
 **Lifecycle**:
 
-```
-User ──POST /api/darwinia/jobs──► Next.js
-                                    │  (1) supabase.insert(jobs)
-                                    │  (2) AgenticCommerce.createJob(provider=agent, evaluator=client, ...)
-                                    │      → onchain_job_id stored in DB
-                                    ▼
-                     Agent Worker (PM2) polls pending jobs
-                                    │  (3) python -m darwinia evolve  (per-iteration loop)
-                                    │      ├─ each iteration → x402 / EIP-3009 / Nanopayment ($0.001 USDC)
-                                    │      └─ job complete →
-                                    │              AgenticCommerce.submit(jobId, keccak256(result))
-                                    │              AgenticCommerce.complete(jobId, "evolution-done")
-                                    │              ⇒ IdentityRegistry.incrementReputation(agent, 1)
-                                    ▼
-                            Reputation visible on-chain
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as User
+    participant NX as Next.js API
+    participant DB as Supabase
+    participant AC as AgenticCommerce<br/>(ERC-8183)
+    participant AW as Agent Worker
+    participant IR as IdentityRegistry<br/>(ERC-8004)
+
+    U->>NX: POST /api/darwinia/jobs
+    NX->>DB: insert(job)
+    NX->>AC: createJob(provider, evaluator, …)
+    AC-->>NX: onchain_job_id
+    NX->>DB: update(onchain_job_id)
+    NX-->>U: 201 Created
+
+    loop every 10s
+        AW->>DB: poll pending jobs
+    end
+    AW->>DB: claim job (atomic PATCH)
+    AW->>AW: spawn `python -m darwinia evolve`
+    loop per generation
+        AW->>DB: insert(iteration, locked)
+        U->>NX: GET /iterations/:id/detail (X-PAYMENT)
+        NX->>AC: transferWithAuthorization (USDC)
+        NX-->>U: full champion DNA
+    end
+    AW->>AC: submit(jobId, keccak256(result))
+    AW->>AC: complete(jobId, "evolution-done")
+    AC->>IR: incrementReputation(agent, 1)
 ```
 
 **Cross-chain capital**: clients can fund their Arc balance from Solana via Circle Gateway (`gatewayMint(bytes,bytes)`). End-to-end smoke test in [`scripts/smoke-test-solana-to-arc.mjs`](scripts/smoke-test-solana-to-arc.mjs) — sent 2.5 USDC from Solana, received 2.497 USDC on Arc, fee 0.003 USDC.
@@ -141,6 +172,15 @@ Start the app:
 npm run dev
 ```
 
+**(Optional) Provision a fresh on-chain agent EOA** — skips manual key gen, gas funding, and registry registration:
+
+```bash
+node scripts/bootstrap-agent-eoa.mjs
+# generates PK → funds 0.05 USDC from ARC_RELAY_PRIVATE_KEY → registers on
+# IdentityRegistry → updates Supabase agent row → writes ARC_AGENT_PRIVATE_KEY
+# / ARC_AGENT_ADDRESS / NEXT_PUBLIC_ARC_AGENT_ADDRESS to .env.local
+```
+
 Start the agent worker:
 
 ```bash
@@ -158,7 +198,7 @@ node agent-worker/index.js
 | `ARC_CLIENT_PRIVATE_KEY` | EOA private key for signing EIP-3009 |
 | `ARC_RELAY_PRIVATE_KEY` | EOA private key for relay wallet (submits on-chain) |
 | `ARC_AGENT_ADDRESS` | Agent wallet address (receives USDC) |
-| `ARC_AGENT_PRIVATE_KEY` | (Optional) provider EOA key for on-chain `submit()` — opt-in |
+| `ARC_AGENT_PRIVATE_KEY` | Provider EOA key for on-chain `submit()` / `complete()` — auto-set by `bootstrap-agent-eoa.mjs` |
 | `ARC_CLIENT_ADDRESS` | Client wallet address (pays USDC) |
 | `NEXT_PUBLIC_ARC_CLIENT_ADDRESS` | Same as above, exposed to frontend |
 | `NEXT_PUBLIC_ARC_AGENT_ADDRESS` | Agent address, exposed to frontend (provider in `createJob`) |
